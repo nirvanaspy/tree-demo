@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="./echarts.min.js"></script>
+    <script type="text/javascript" src="./qwebchannel.js"></script>
+    <title>Tree</title>
+    <style type="text/css">
+        .header {
+            height: 40px;
+            line-height: 40px;
+        }
+        .myButton {
+            display: inline-block;
+            padding: 2px 6px;
+            height: 30px;
+            line-height: 30px;
+            background: #409EFF;
+            color: #eee;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .createContainer, .setStatusContainer, .setEleValueContainer {
+            margin-top: 10px;
+        }
+        #sonNodeInput, #selectSonNode, #selectFatherNode, #inputProgress, #inputEleVal{
+            height: 26px;
+        }
+    </style>
+</head>
+<body>
+    <div style="width: 100%;height: 330px;">
+        <div style="width: 40%;height:100%;float: left;border: 1px solid #ccc;margin-right: 20px;padding: 0 10px">
+            <div class="header">创建节点</div>
+            <div style="margin-bottom: 20px;">
+                <span id="createFatherNode" class="myButton">创建二级节点</span>
+            </div>
+            <span id="createSonNode" class="myButton">创建三级节点</span>
+            <input type="text" id="sonNodeInput" placeholder="输入二级节点id">
+        </div>
+        <div style="width: 40%;float: left;border: 1px solid #ccc;height:100%;padding: 0 10px;">
+            <div class="header">配置节点</div>
+            <div class="setStatusContainer">
+                <div style="margin-bottom: 20px">
+                    <input type="text" id="selectFatherNode" placeholder="输入二级节点id">
+                    <input type="text" id="selectSonNode" placeholder="输入三级节点id">
+                    <div style="margin-top: 10px;">
+                        <span class="myButton" onclick="selectFatherNode()">选中二级</span>
+                        <span class="myButton" onclick="unSelectFatherNode()">取消选中二级</span>
+                        <span class="myButton" onclick="selectSonNode()">选中三级</span>
+                        <span class="myButton" onclick="unSelectSonNode()">取消选中三级</span>
+                        <div style="margin-top: 10px;">
+                            <span class="myButton" onclick="onDeleteFatherNode()">删除二级</span>
+                            <span class="myButton" onclick="onDeleteSonNode()">删除三级</span>
+                            <span class="myButton" onclick="onClearFatherNodes()">清空二级节点</span>
+                            <span class="myButton" onclick="onClearSonNodes()">清空三级节点</span>
+                            <span class="myButton" onclick="onRenameFatherNode()">修改二级名称</span>
+                            <span class="myButton" onclick="onRenameSonNode()">修改三级名称</span>
+                        </div>
+                    </div>
+                </div>
+                <span class="myButton" id="nodeReset" style="background: rgb(190,190,190)">复位</span>
+                <span class="myButton" id="nodeOnline" style="background: rgb(17,255,0)">入网</span>
+                <span class="myButton" id="nodeTransfer" style="background: rgb(255,255,0)">传输</span>
+                <span class="myButton" id="nodeComplete" style="background: rgb(0,5,255)">完毕</span>
+                <span class="myButton" id="nodeSetFinish" style="background: rgb(255,146,143)">配完</span>
+                <span class="myButton" id="nodeLoss" style="background: rgb(255,0,0)">丢失</span>
+                <div style="margin-top: 20px;">
+                    <span class="myButton" id="setProgress">更新进度</span>
+                    <input type="text" id="inputProgress" placeholder="请输入进度">
+                </div>
+            </div>
+            <div class="setEleValueContainer">
+                <span class="myButton" id="setEleValue">更新电量</span>
+                <input type="text" id="inputEleVal" placeholder="请输入电量">
+            </div>
+        </div>
+    </div>
+    <div id="container" style="width: 800px;min-height:500px;"></div>
+    <script>
+        var dom = document.getElementById("container");
+        var myChart = echarts.init(dom);
+        var app = {};
+        option = null;
+        myChart.showLoading();
+        myChart.hideLoading();
+        var selectedNode = null
+        var data = {
+            children: [],
+            name: '测试网关',
+            // value: ''
+        }
+        var QtContent
+        window.onload = function() {
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                QtContent = channel.objects.content;
+            })
+        }
+        // 节点点击事件
+        myChart.on('click', function (params) {
+            // console.log(params)
+
+            if(selectedNode && selectedNode.id === params.data.id) { // 连续两次选中的是同一节点
+                selectedNode = {}
+            } else {
+                selectedNode = params.data
+            }
+            if(params.data.nodeType === 'son') { // 点击的为三级节点-------------------------------
+                data.children.forEach((item) => {
+
+                    //  重置所有二级节点选中状态
+                    item.itemStyle.borderColor = 'rgb(127,127,127)'
+                    item.itemStyle.borderWidth = 1.5
+                    if(item.children) {
+                        item.children.forEach((sonItem) => {
+
+                            // 重置所有三级节点选中状态
+                            sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                            sonItem.itemStyle.borderWidth = 1.5
+
+                            // 设置或取消当前点击的三级节点选中状态
+                            if(sonItem.id === params.data.id) {
+                                if(selectedNode == null || selectedNode.id) {
+                                    sonItem.itemStyle.borderColor = 'rgb(0,0,0)'
+                                    sonItem.itemStyle.borderWidth = 3
+                                } else {
+                                    sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                                    sonItem.itemStyle.borderWidth = 1.5
+                                }
+                            }
+                        })
+                    }
+                })
+            } else if (params.data.nodeType === 'father') { // 点击的为二级节点----------------------
+                data.children.forEach((item) => {
+
+                    //  重置所有二级节点选中状态
+                    item.itemStyle.borderColor = 'rgb(127,127,127)'
+                    item.itemStyle.borderWidth = 1.5
+
+                    // 重置所有三级节点选中状态
+                    if(item.children) {
+                        item.children.forEach((sonItem) => {
+                            sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                            sonItem.itemStyle.borderWidth = 1.5
+                        })
+                    }
+
+                    // 设置或取消选中状态
+                    if(item.id === params.data.id) {
+                        if(selectedNode == null || selectedNode.id) {
+                            item.itemStyle.borderColor = 'rgb(0,0,0)'
+                            item.itemStyle.borderWidth = 3
+                        } else {
+                            item.itemStyle.borderColor = 'rgb(127,127,127)'
+                            item.itemStyle.borderWidth = 1.5
+                        }
+                        item.collapsed = !item.collapsed
+                    }
+                })
+            } else {
+                return
+            }
+            let sendText = sendClickSignal()
+            initOption()
+            QtContent.receiveText(sendText);
+        })
+
+        // 发送点击信号
+        function sendClickSignal() {
+            let sendText = null
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'father') {
+                        sendText = 'sec' + selectedNode.id
+                    } else if (selectedNode.nodeType === 'son') {
+                        sendText = 'thi' + selectedNode.id
+                    }
+                } else {
+                    sendText = '0'
+                }
+            }
+            return sendText
+        }
+
+        // 触发选中二级节点----------------------------------------------------------------------------
+        function onSelectFatherNode(nodeId) {
+            data.children.forEach((item) => {
+
+                //  重置所有二级节点选中状态
+                item.itemStyle.borderColor = 'rgb(127,127,127)'
+                item.itemStyle.borderWidth = 1.5
+
+                // 重置所有三级节点选中状态
+                if(item.children) {
+                    item.children.forEach((sonItem) => {
+                        sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                        sonItem.itemStyle.borderWidth = 1.5
+                    })
+                }
+
+                // 设置选中状态
+                if(item.id === nodeId) {
+                    selectedNode = item
+                    item.itemStyle.borderColor = 'rgb(0,0,0)'
+                    item.itemStyle.borderWidth = 3
+                    item.collapsed = !item.collapsed
+                }
+            })
+            initOption()
+        }
+
+        // 触发选中三级节点
+        function onSelectSonNode(nodeId) {
+            data.children.forEach((item) => {
+
+                //  重置所有二级节点选中状态
+                item.itemStyle.borderColor = 'rgb(127,127,127)'
+                item.itemStyle.borderWidth = 1.5
+
+                if(item.children) {
+                    item.children.forEach((sonItem) => {
+
+                        // 重置所有三级节点选中状态
+                        sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                        sonItem.itemStyle.borderWidth = 1.5
+
+                        // 设置当前点击的三级节点选中状态
+                        if(sonItem.id === nodeId) {
+                            selectedNode = sonItem
+                            item.collapsed = false
+                            sonItem.itemStyle.borderColor = 'rgb(0,0,0)'
+                            sonItem.itemStyle.borderWidth = 3
+                        }
+                    })
+                }
+            })
+            initOption()
+        }
+
+        // 触发取消选中二级节点
+        function onUnselectFatherNode(nodeId) {
+            if(selectedNode) {
+                if(selectedNode.id){
+                    if(nodeId === selectedNode.id) {
+                        selectedNode = {}
+                        data.children.forEach((item) => {
+                            //  重置所有二级节点选中状态
+                            item.itemStyle.borderColor = 'rgb(127,127,127)'
+                            item.itemStyle.borderWidth = 1.5
+
+                            // 重置所有三级节点选中状态
+                            if(item.children) {
+                                item.children.forEach((sonItem) => {
+                                    sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                                    sonItem.itemStyle.borderWidth = 1.5
+                                })
+                            }
+                            // 切换节点选中状态
+                            if(item.id === nodeId) {
+                                item.collapsed = !item.collapsed
+                            }
+                        })
+                    }
+                    initOption()
+                }
+            }
+        }
+
+        // 触发取消选中三级节点
+        function onUnselectSonNode(nodeId) {
+            if(selectedNode) {
+                if(selectedNode.id){
+                    if(nodeId === selectedNode.id) {
+                        selectedNode = {}
+                        data.children.forEach((item) => {
+                            //  重置所有二级节点选中状态
+                            item.itemStyle.borderColor = 'rgb(127,127,127)'
+                            item.itemStyle.borderWidth = 1.5
+
+                            // 重置所有三级节点选中状态
+                            if(item.children) {
+                                item.children.forEach((sonItem) => {
+                                    sonItem.itemStyle.borderColor = 'rgb(127,127,127)'
+                                    sonItem.itemStyle.borderWidth = 1.5
+                                })
+                            }
+                        })
+                    }
+                    initOption()
+                }
+            }
+        }
+
+        // 点击的一些模拟事件
+        // 模拟触发选中二级节点
+        function selectFatherNode() {
+            let nodeId = 'fatherNode' + document.getElementById('selectFatherNode').value
+            onSelectFatherNode(nodeId)
+        }
+
+        // 模拟触发选中三级节点
+        function selectSonNode() {
+            let nodeId = 'fatherNode' + document.getElementById('selectFatherNode').value
+            let sonNodeId =  nodeId + 'sonNode' + document.getElementById('selectSonNode').value
+            onSelectSonNode(sonNodeId)
+        }
+
+        // 模拟触发取消选中二级节点
+        function unSelectFatherNode() {
+            let nodeId = 'fatherNode' + document.getElementById('selectFatherNode').value
+            onUnselectFatherNode(nodeId)
+        }
+
+        // 模拟触发取消选中三级节点
+        function unSelectSonNode() {
+            let nodeId = 'fatherNode' + document.getElementById('selectFatherNode').value
+            let sonNodeId =  nodeId + 'sonNode' + document.getElementById('selectSonNode').value
+            onUnselectSonNode(sonNodeId)
+        }
+
+        // 初始化图表方法------------------------------------------------------------------------------
+        function initOption() {
+            myChart.setOption(option = {
+                tooltip: {
+                    trigger: 'item',
+                    triggerOn: 'mousemove'
+                },
+                series: [
+                    {
+                        type: 'tree',
+
+                        data: [data],
+
+                        top: '1%',
+                        left: '7%',
+                        bottom: '1%',
+                        right: '20%',
+
+                        symbolSize: 14,
+                        symbolOffset: ['50%', 0],
+
+                        label: {
+                            normal: {
+                                formatter: function (v) {
+                                    if(v.data.progress) {
+                                        return v.name + '\n' + '{progress|' + '  进度:' + v.data.progress + '}'
+                                        // return v.name + '  进度：' + v.data.progress
+                                    } else if(v.data.status) {
+                                        return v.name + '\n' + '{status|' + '  状态:' + v.data.status + '}'
+                                    } else if(v.data.eleValue) {
+                                        return v.name + '\n' + '{eleValue|' + '  电量:' + v.data.eleValue + '}'
+                                    } else {
+                                        return v.name
+                                    }
+                                },
+                                rich: {
+                                    progress: {
+                                        color: '#409EFF'
+                                    },
+                                    status: {
+                                        color: 'rgb(159,187,94)'
+                                    },
+                                    eleValue: {
+                                        color: 'rgb(0,5,255)'
+                                    }
+                                },
+                                position: 'left',
+                                verticalAlign: 'middle',
+                                align: 'right',
+                                fontSize: 14
+                            }
+                        },
+
+                        leaves: {
+                            label: {
+                                normal: {
+                                    position: 'right',
+                                    verticalAlign: 'middle',
+                                    align: 'left'
+                                }
+                            }
+                        },
+                        // roam: true,
+                        expandAndCollapse: true,
+                        animationDuration: 550,
+                        animationDurationUpdate: 750
+                    }
+                ]
+            });
+        }
+        // 初始化图表
+        initOption()
+
+
+        // 添加节点-----------------------------------------------------------------------------------
+        // --添加二级节点
+        function addFatherNode(id, name) {
+            let addId = id ? id : 'fatherNode' + data.children.length
+            let addName = name ? name : '汇聚节点'
+            data.children.push({
+                // name: '汇聚节点' + data.children.length,
+                name: addName,
+                id: addId,
+                // id: 'fatherNode' + data.children.length,
+                nodeType: 'father',
+                itemStyle: {
+                    borderColor: 'rgb(127,127,127)'
+                }
+            })
+            initOption()
+        }
+        // --添加三级节点
+        // 参数为 目标二级节点id， 添加的三级节点id
+        function addSonNode(fatherNodeId, id, name) {
+            data.children.forEach((item) => {
+                if(item.id === fatherNodeId) {
+                    let addName = name ? name : '测试节点'
+                    if(item.children !== undefined) {
+                        let addId = id ? id : item.id + 'sonNode' + item.children.length
+                        item.children.push({
+                            // name: '测试节点' + item.children.length,
+                            // id: item.id + 'sonNode' + item.children.length,
+                            name: addName,
+                            id: addId,
+                            nodeType: 'son',
+                            // value: '',
+                            symbol: 'roundRect',
+                            symbolSize: [40,20],
+                            itemStyle: {
+                                color: 'rgb(255,255,255)',
+                                borderColor: 'rgb(127,127,127)'
+                            }
+                        })
+                    } else {
+                        item.children = []
+                        let addId = id ? id : item.id + 'sonNode0'
+                        item.children.push({
+                            // name: '测试节点' + item.children.length,
+                            // id: item.id + 'sonNode0',
+                            name: addName,
+                            id: addId,
+                            nodeType: 'son',
+                            // value: '',
+                            symbol: 'roundRect',
+                            symbolSize: [40,20],
+                            itemStyle: {
+                                color: 'rgb(255,255,255)',
+                                borderColor: 'rgb(127,127,127)'
+                            }
+                        })
+                    }
+                    item.collapsed = false
+                } else {
+                    return
+                }
+            })
+            initOption()
+        }
+
+        // ---模拟添加二级节点
+        document.getElementById('createFatherNode').addEventListener('click' , function () {
+            addFatherNode()
+        })
+        // ---模拟添加三级节点
+        document.getElementById('createSonNode').addEventListener('click' , function () {
+            let inputId = document.getElementById('sonNodeInput').value
+            if(!inputId) {
+                alert('请先输入子节点id')
+                return
+            }
+            inputId = 'fatherNode' + inputId
+            addSonNode(inputId)
+        })
+
+
+        // 删除节点-----------------------------------------------------------------------------------
+        // 删除二级节点
+        function deleteFatherNode(nodeId) {
+            data.children.forEach((item, index) => {
+                if(item.id === nodeId) {
+                    data.children.splice(index, 1)
+                }
+            })
+            initOption()
+        }
+        // 删除三级节点
+        // function deleteSonNode(fatherId, sonId) {
+        function deleteSonNode(sonId) {
+            data.children.forEach((item) => {
+                /*if(item.id === fatherId) {
+                    if(item.children) {
+                        item.children.forEach((sonItem, sonIndex) => {
+                            if(sonItem.id === sonId) {
+                                item.children.splice(sonIndex, 1)
+                            }
+                        })
+                    }
+                }*/
+                if(item.children) {
+                    item.children.forEach((sonItem, sonIndex) => {
+                        if(sonItem.id === sonId) {
+                            item.children.splice(sonIndex, 1)
+                        }
+                    })
+                }
+
+            })
+            initOption()
+        }
+        // 模拟删除二级节点
+        function onDeleteFatherNode () {
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'father') {
+                        let nodeId = selectedNode.id
+                        deleteFatherNode(nodeId)
+                    }
+                }
+            }
+        }
+        // 模拟删除三级节点
+        function onDeleteSonNode () {
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'son') {
+                        let nodeId = selectedNode.id
+                        deleteSonNode(nodeId)
+                    }
+                }
+            }
+        }
+
+
+        // 修改节点名称
+        // 修改父节点名称
+        function renameFatherNode(nodeId, nodeName) {
+            data.children.forEach((item) => {
+                if(item.id === nodeId) {
+                    item.name = nodeName
+                }
+            })
+            initOption()
+        }
+        // 修改子节点名称
+        function renameSonNode(nodeId, nodeName) {
+            data.children.forEach((item) => {
+                if(item.children) {
+                    item.children.forEach((sonItem) => {
+                        if(sonItem.id === nodeId) {
+                            sonItem.name = nodeName
+                        }
+                    })
+                }
+            })
+            initOption()
+        }
+        // 模拟修改二级节点名称
+        function onRenameFatherNode () {
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'father') {
+                        let nodeId = selectedNode.id
+                        renameFatherNode(nodeId, '重新命名父节点')
+                    }
+                }
+            }
+        }
+        // 模拟修改三级节点名称
+        function onRenameSonNode () {
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'son') {
+                        let nodeId = selectedNode.id
+                        renameSonNode(nodeId, '重新命名子节点')
+                    }
+                }
+            }
+        }
+
+
+        // 清空节点-----------------------------------------------------------------------------------
+        // 清空二级节点下所有的三级节点 参数为选中的二级节点id
+        function clearSonNodes(nodeId) {
+            data.children.forEach((item) => {
+                if(item.id === nodeId) {
+                    item.children = []
+                }
+            })
+            initOption()
+        }
+        // 清空根结点下所有的二级节点
+        function clearFatherNodes() {
+            data.children = []
+            initOption()
+        }
+        // 模拟清空三级节点
+        function onClearSonNodes() {
+            if(selectedNode) {
+                if(selectedNode.id) {
+                    if(selectedNode.nodeType === 'father') {
+                        let nodeId = selectedNode.id
+                        clearSonNodes(nodeId)
+                    }
+                }
+            }
+        }
+        // 模拟清空二级节点
+        function onClearFatherNodes() {
+            clearFatherNodes()
+        }
+
+
+        // 设置三级节点状态-----------------------------------------------------------------------------
+        // 接收的参数分别为二级节点id，三级节点id， 状态
+        function setSonNodeStatus(fatherNodeId, sonNodeId, status) {
+            if(fatherNodeId && sonNodeId) {
+                data.children.forEach((item) => {
+                    if(item.id === fatherNodeId) {
+                        if(item.children !== undefined) {
+                            item.children.forEach((sonItem) => {
+                                if(sonItem.id === sonNodeId) {
+                                    sonItem.symbol = 'roundRect'
+                                    sonItem.symbolSize = [40,20]
+                                    sonItem.progress = null
+                                    sonItem.eleValue = null
+                                    // 复位
+                                    if(status === 'reset') {
+                                        sonItem.status = '复位'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(190,190,190)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(190,190,190)'
+                                        }
+                                    }
+                                    // 入网
+                                    if(status === 'online') {
+                                        sonItem.status = '入网'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(17,255,0)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(17,255,0)'
+                                        }
+                                    }
+                                    // 传输
+                                    if(status === 'transfer') {
+                                        sonItem.status = '传输'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(255,255,0)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(255,255,0)'
+                                        }
+                                    }
+                                    // 完毕
+                                    if(status === 'complete') {
+                                        sonItem.status = '完毕'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(0,5,255)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(0,5,255)'
+                                        }
+                                    }
+                                    // 配完
+                                    if(status === 'finish') {
+                                        sonItem.status = '配完'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(255,146,143)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(255,146,143)'
+                                        }
+                                    }
+                                    // 丢失
+                                    if(status === 'loss') {
+                                        sonItem.status = '丢失'
+                                        sonItem.itemStyle = {
+                                            color: 'rgb(255,0,0)',
+                                            borderColor: 'rgb(127,127,127)'
+                                            // borderColor: 'rgb(255,0,0)'
+                                        }
+                                    }
+                                    // item.collapsed = false
+                                    initOption()
+                                }
+                            })
+                        }
+                    }
+                })
+            }
+        }
+
+        // --模拟操作
+        // --模拟复位
+        document.getElementById('nodeReset').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'reset')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+        // --模拟入网
+        document.getElementById('nodeOnline').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'online')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+        // --模拟传输
+        document.getElementById('nodeTransfer').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'transfer')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+        // --模拟完毕
+        document.getElementById('nodeComplete').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'complete')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+        // --模拟配完
+        document.getElementById('nodeSetFinish').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'finish')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+        // --模拟丢失
+        document.getElementById('nodeLoss').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setSonNodeStatus(fatherNode, sonNode, 'loss')
+            } else {
+                alert('未能选中目标三级节点')
+            }
+
+        })
+
+
+        // 刷新三级节点进度-------------------------------------------------------------------------------
+        // 接收的参数分别为二级节点id，三级节点id，进度
+        function setNodeProgress(fatherNodeId, sonNodeId, progress) {
+            if(fatherNodeId && sonNodeId) {
+                if(progress) {
+                    data.children.forEach((item) => {
+                        if(item.id === fatherNodeId) {
+                            if(item.children !== undefined) {
+                                item.children.forEach((sonItem) => {
+                                    if(sonItem.id === sonNodeId) {
+                                        sonItem.status = null
+                                        sonItem.eleValue = null
+                                        sonItem.progress = progress
+                                    }
+                                })
+                            }
+                        }
+                    })
+                }
+            } else {
+                return
+            }
+            initOption()
+        }
+        // --模拟刷新三级节点进度
+        document.getElementById('setProgress').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            let progressValue = document.getElementById('inputProgress').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setNodeProgress(fatherNode, sonNode, progressValue)
+            } else {
+                alert('未能选中目标三级节点')
+            }
+        })
+
+
+        // 刷新电量--------------------------------------------------------------------------------------
+        // 接收的参数分别为二级节点id，三级节点id，电量
+        function setNodeEleVal(fatherNodeId, sonNodeId, eleVal) {
+            if(fatherNodeId && sonNodeId) {
+                if(eleVal) {
+                    data.children.forEach((item) => {
+                        if(item.id === fatherNodeId) {
+                            if(item.children !== undefined) {
+                                item.children.forEach((sonItem) => {
+                                    if(sonItem.id === sonNodeId) {
+                                        sonItem.status = null
+                                        sonItem.progress = null
+                                        sonItem.eleValue = eleVal
+                                    }
+                                })
+                            }
+                        }
+                    })
+                }
+            } else {
+                return
+            }
+            initOption()
+        }
+        // --模拟刷新电量
+        document.getElementById('setEleValue').addEventListener('click', function () {
+            let inputFatherId = document.getElementById('selectFatherNode').value
+            let inputSonId = document.getElementById('selectSonNode').value
+            let eleValue = document.getElementById('inputEleVal').value
+            if(inputFatherId && inputSonId) {
+                let fatherNode = 'fatherNode' + inputFatherId
+                let sonNode = fatherNode + 'sonNode' + inputSonId
+                setNodeEleVal(fatherNode, sonNode, eleValue)
+            } else {
+                alert('未能选中目标三级节点')
+            }
+        })
+    </script>
+</body>
+</html>
